@@ -1,0 +1,69 @@
+name: Validate add-ons
+
+# Checks that every add-on directory is valid: syntactically correct config.json,
+# required keys present, icons with the right dimensions, and version consistent
+# with a v* tag when pushing a tag.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate add-on directories
+        run: |
+          set -euo pipefail
+          failed=0
+          found=0
+          for dir in */; do
+            dir="${dir%/}"
+            [ -f "${dir}/config.json" ] || continue
+            found=$((found + 1))
+            echo "::group::${dir}"
+
+            node -e "const c=require('./${dir}/config.json');
+              const required=['name','slug','version','description','arch'];
+              for (const k of required) if (!(k in c)) { console.error('missing key: '+k); process.exit(1); }
+              if (!/^\\d+\\.\\d+\\.\\d+$/.test(c.version)) { console.error('bad version: '+c.version); process.exit(1); }
+              if (c.image && !c.image.includes('{arch}')) { console.error('image should contain {arch}'); process.exit(1); }
+              console.log('config OK: '+c.name+' '+c.version);"
+
+            # On a v* tag push, the version of every add-on changed by the tag must match it
+            if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+              tag_version="${GITHUB_REF_NAME#v}"
+              addon_version=$(node -p "require('./${dir}/config.json').version")
+              if git diff --quiet "HEAD^" "HEAD" -- "${dir}" 2>/dev/null; then
+                : # add-on not modified by this tag
+              elif [ "$addon_version" != "$tag_version" ]; then
+                echo "::error::${dir}: version ${addon_version} != tag ${tag_version}"
+                failed=1
+              fi
+            fi
+
+            for img in icon logo; do
+              if [ -f "${dir}/${img}.png" ]; then
+                node -e "
+                  const fs=require('fs'); const b=fs.readFileSync('${dir}/${img}.png');
+                  // PNG: signature 8 octets puis IHDR: len(4)+type(4)+width(4)+height(4)
+                  const w=b.readUInt32BE(16), h=b.readUInt32BE(20);
+                  console.log('${img}.png: '+w+'x'+h);
+                  const expected='${img}'==='icon'?[128,128]:[256,256];
+                  if (w!==expected[0]||h!==expected[1]) { console.error('expected '+expected.join('x')); process.exit(1); }"
+              fi
+            done
+            echo "::endgroup::"
+          done
+
+          if [ "$found" -eq 0 ]; then
+            echo "::warning::No add-on found (no directory with a config.json)"
+          fi
+          exit $failed
+
+      - name: Validate repository.json
+        run: node -e "const r=require('./repository.json'); if(!r.name||!r.url) { throw new Error('repository.json invalide'); }"

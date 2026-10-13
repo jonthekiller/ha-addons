@@ -1,0 +1,10 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Local data (never commit runtime data of add-ons)
+*/data/
+*.db
+*.db-wal
+*.db-shm

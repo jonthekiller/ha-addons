@@ -1,0 +1,170 @@
+name: Sync add-on
+
+# Syncs an add-on from its source repository (e.g. jonthekiller/rss-tracker,
+# directory addon/) into this repository, then commits and pushes.
+#
+# Triggers:
+#  - repository_dispatch "addon-release" sent by the source repository after
+#    publishing a new image:
+#      client-payload: {"addon": "rss-tracker", "ref": "v1.0.0"}
+#  - workflow_dispatch (Actions tab → Sync add-on → Run workflow).
+#  - schedule: daily check — if the source repository has a newer version
+#    (v* tag) than the local config.json, it is synced. Otherwise, no-op.
+
+env:
+  DEFAULT_ADDON: rss-tracker
+  DEFAULT_SOURCE_REPOSITORY: jonthekiller/rss-tracker
+  DEFAULT_SOURCE_PATH: addon
+
+on:
+  repository_dispatch:
+    types: [addon-release]
+  workflow_dispatch:
+    inputs:
+      addon:
+        description: 'Add-on directory name in this repo (e.g. rss-tracker)'
+        required: true
+        default: 'rss-tracker'
+      source_repository:
+        description: 'Source repository (owner/name)'
+        required: true
+        default: 'jonthekiller/rss-tracker'
+      source_path:
+        description: 'Add-on path inside the source repository'
+        required: true
+        default: 'addon'
+      ref:
+        description: 'Source git ref (version tag, e.g. v1.0.0). Empty = latest v* tag'
+        required: false
+        default: ''
+  schedule:
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-${{ github.event.client_payload.addon || inputs.addon || 'rss-tracker' }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      - name: Resolve parameters
+        id: params
+        env:
+          GH_TOKEN: ${{ secrets.ADDONS_REPO_PAT || github.token }}
+          PAYLOAD_ADDON: ${{ github.event.client_payload.addon }}
+          PAYLOAD_REF: ${{ github.event.client_payload.ref }}
+        run: |
+          set -euo pipefail
+
+          case "${{ github.event_name }}" in
+            repository_dispatch)
+              addon="${PAYLOAD_ADDON:?missing addon in payload}"
+              ref="${PAYLOAD_REF:?missing ref in payload}"
+              source_repository="${{ github.event.client_payload.source_repository || env.DEFAULT_SOURCE_REPOSITORY }}"
+              source_path="${{ github.event.client_payload.source_path || env.DEFAULT_SOURCE_PATH }}"
+              ;;
+            workflow_dispatch)
+              addon="${{ inputs.addon }}"
+              source_repository="${{ inputs.source_repository }}"
+              source_path="${{ inputs.source_path }}"
+              ref="${{ inputs.ref }}"
+              # Empty ref → latest v* tag from the source repository
+              if [ -z "$ref" ]; then
+                ref=$(git ls-remote --tags --refs \
+                  "https://x-access-token:${GH_TOKEN}@github.com/${source_repository}.git" \
+                  | awk -F/ '{print $3}' | grep -E '^v[0-9]' | sort -V | tail -1)
+                [ -n "$ref" ] || { echo "::error::No v* tag found in ${source_repository}"; exit 1; }
+              fi
+              ;;
+            schedule)
+              addon="${DEFAULT_ADDON}"
+              source_repository="${DEFAULT_SOURCE_REPOSITORY}"
+              source_path="${DEFAULT_SOURCE_PATH}"
+              # Latest v* tag from the source repository
+              ref=$(git ls-remote --tags --refs \
+                "https://x-access-token:${GH_TOKEN}@github.com/${source_repository}.git" \
+                | awk -F/ '{print $3}' | grep -E '^v[0-9]' | sort -V | tail -1)
+              [ -n "$ref" ] || { echo "::error::No v* tag found in ${source_repository}"; exit 1; }
+              ;;
+          esac
+
+          # Only sync when the source version differs from the local version
+          local_version=$(node -p "require('./${addon}/config.json').version")
+          source_version="${ref#v}"
+          if [ "$local_version" = "$source_version" ]; then
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+            echo "${addon}: already up to date (version ${local_version})"
+          else
+            echo "up_to_date=false" >> "$GITHUB_OUTPUT"
+            echo "${addon}: ${local_version} → ${source_version}"
+          fi
+
+          {
+            echo "addon=${addon}"
+            echo "ref=${ref}"
+            echo "source_repository=${source_repository}"
+            echo "source_path=${source_path}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout add-on from source repository
+        if: steps.params.outputs.up_to_date == 'false'
+        # ADDONS_REPO_PAT: PAT with read access to the source repository
+        # (required if the source repository is private). Falls back to
+        # GITHUB_TOKEN (enough when the source repository is public).
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.params.outputs.source_repository }}
+          ref: ${{ steps.params.outputs.ref }}
+          token: ${{ secrets.ADDONS_REPO_PAT || github.token }}
+          sparse-checkout: ${{ steps.params.outputs.source_path }}
+          path: .source-addon
+
+      - name: Check config.json version matches the ref
+        if: steps.params.outputs.up_to_date == 'false'
+        run: |
+          addon_version=$(node -p "require('./.source-addon/${{ steps.params.outputs.source_path }}/config.json').version")
+          expected="${REF#v}"
+          if [ "$addon_version" != "$expected" ]; then
+            echo "::error::config.json version ($addon_version) != ref ($REF → $expected)"
+            exit 1
+          fi
+          echo "Syncing $ADDON version $addon_version"
+        env:
+          REF: ${{ steps.params.outputs.ref }}
+          ADDON: ${{ steps.params.outputs.addon }}
+
+      - name: Copy add-on into repository
+        if: steps.params.outputs.up_to_date == 'false'
+        run: |
+          mkdir -p "${ADDON}"
+          rsync -a --delete ".source-addon/${SOURCE_PATH}/" "${ADDON}/"
+          # The source repository working copy must never be committed
+          rm -rf .source-addon
+        env:
+          ADDON: ${{ steps.params.outputs.addon }}
+          SOURCE_PATH: ${{ steps.params.outputs.source_path }}
+
+      - name: Commit and push
+        if: steps.params.outputs.up_to_date == 'false'
+        run: |
+          version=$(node -p "require('./${ADDON}/config.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${ADDON}"
+          if git diff --cached --quiet; then
+            echo "No changes to commit — ${ADDON} is already at ${version}."
+            exit 0
+          fi
+          git commit -m "sync(${ADDON}): ${SOURCE_REPO}@${REF} (version ${version})"
+          git push
+        env:
+          ADDON: ${{ steps.params.outputs.addon }}
+          REF: ${{ steps.params.outputs.ref }}
+          SOURCE_REPO: ${{ steps.params.outputs.source_repository }}
