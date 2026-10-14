@@ -168,3 +168,48 @@ jobs:
           ADDON: ${{ steps.params.outputs.addon }}
           REF: ${{ steps.params.outputs.ref }}
           SOURCE_REPO: ${{ steps.params.outputs.source_repository }}
+
+      # Version already up to date → still refresh the add-on README from the
+      # source repository's default branch, so documentation changes flow
+      # without requiring a new release. Functional files stay pinned to the
+      # released version.
+      - name: Checkout source default branch (docs refresh)
+        if: steps.params.outputs.up_to_date == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.params.outputs.source_repository }}
+          ref: main
+          token: ${{ secrets.ADDONS_REPO_PAT || github.token }}
+          sparse-checkout: ${{ steps.params.outputs.source_path }}
+          path: .source-docs
+
+      - name: Refresh add-on README from source default branch
+        if: steps.params.outputs.up_to_date == 'true'
+        run: |
+          src=".source-docs/${SOURCE_PATH}/README.md"
+          if [ -f "$src" ]; then
+            mkdir -p "${ADDON}"
+            cp "$src" "${ADDON}/README.md"
+          else
+            echo "No README.md in ${SOURCE_PATH} — nothing to refresh"
+          fi
+          rm -rf .source-docs
+        env:
+          ADDON: ${{ steps.params.outputs.addon }}
+          SOURCE_PATH: ${{ steps.params.outputs.source_path }}
+
+      - name: Commit README update
+        if: steps.params.outputs.up_to_date == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${ADDON}/README.md"
+          if git diff --cached --quiet; then
+            echo "README already up to date"
+            exit 0
+          fi
+          git commit -m "docs(${ADDON}): refresh README from ${SOURCE_REPO}@main"
+          git push
+        env:
+          ADDON: ${{ steps.params.outputs.addon }}
+          SOURCE_REPO: ${{ steps.params.outputs.source_repository }}
