@@ -30,8 +30,14 @@ jobs:
             node -e "const c=require('./${dir}/config.json');
               const required=['name','slug','version','description','arch'];
               for (const k of required) if (!(k in c)) { console.error('missing key: '+k); process.exit(1); }
-              if (!/^\\d+\\.\\d+\\.\\d+$/.test(c.version)) { console.error('bad version: '+c.version); process.exit(1); }
-              if (c.image && !c.image.includes('{arch}')) { console.error('image should contain {arch}'); process.exit(1); }
+              // v prefix (docker tags like jlesage) and a 4th component
+              // (vert same-day rebuilds, e.g. 2026.10.16.2) are allowed.
+              if (!/^v?\d+\.\d+\.\d+(\.\d+)?$/.test(c.version)) { console.error('bad version: '+c.version); process.exit(1); }
+              // {arch} is optional: multi-arch upstream images pulled directly
+              // don't need it (the Supervisor resolves the right platform).
+              if (c.image && !c.image.includes('{arch}')) {
+                console.log('note: image without {arch} (multi-arch upstream image): '+c.image);
+              }
               console.log('config OK: '+c.name+' '+c.version);"
 
             # On a v* tag push, the version of every add-on changed by the tag must match it

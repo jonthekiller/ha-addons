@@ -1,0 +1,49 @@
+{
+  "name": "Fast Note Sync Service",
+  "version": "3.6.1",
+  "slug": "fast_note_sync_service",
+  "description": "Fast Note Sync — self-hosted note synchronization service (image by haierkeys)",
+  "url": "https://github.com/jonthekiller/ha-addons/tree/main/fast_note_sync_service",
+  "image": "haierkeys/fast-note-sync-service",
+  "arch": [
+    "amd64",
+    "aarch64",
+    "armv7"
+  ],
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "hassio_api": false,
+  "homeassistant_api": false,
+  "host_network": false,
+  "host_pid": false,
+  "devicetree": false,
+  "full_access": false,
+  "usb": false,
+  "uart": false,
+  "gpio": false,
+  "kernel_modules": false,
+  "webui": "http://[HOST]:[PORT:9000]",
+  "ports": {
+    "9000/tcp": 9000,
+    "9001/tcp": 9001
+  },
+  "ports_description": {
+    "9000/tcp": "Fast Note Sync API",
+    "9001/tcp": "Fast Note Sync secondary port"
+  },
+  "map": [
+    {
+      "type": "addon_config",
+      "read_only": false,
+      "path": "/fast-note-sync/config"
+    },
+    {
+      "type": "data",
+      "read_only": false,
+      "path": "/fast-note-sync/storage"
+    }
+  ],
+  "options": {},
+  "schema": {}
+}

@@ -1,0 +1,59 @@
+{
+  "name": "JDownloader",
+  "version": "v26.09.1",
+  "slug": "jdownloader",
+  "description": "JDownloader 2 with web UI and MyJDownloader integration (image by jlesage)",
+  "url": "https://github.com/jonthekiller/ha-addons/tree/main/jdownloader",
+  "image": "jlesage/jdownloader-2",
+  "arch": [
+    "amd64",
+    "aarch64",
+    "i386"
+  ],
+  "startup": "services",
+  "boot": "auto",
+  "init": false,
+  "legacy": true,
+  "hassio_api": false,
+  "homeassistant_api": false,
+  "host_network": false,
+  "host_pid": false,
+  "devicetree": false,
+  "full_access": false,
+  "usb": false,
+  "uart": false,
+  "gpio": false,
+  "kernel_modules": false,
+  "panel_icon": "mdi:download",
+  "panel_title": "JDownloader",
+  "ingress": true,
+  "ingress_port": 5800,
+  "ingress_stream": true,
+  "ports": {
+    "3128/tcp": 3128
+  },
+  "ports_description": {
+    "3128/tcp": "JDownloader proxy port"
+  },
+  "map": [
+    "share:rw",
+    "config:rw",
+    "media:rw"
+  ],
+  "environment": {
+    "USER_ID": "0",
+    "GROUP_ID": "0"
+  },
+  "options": {
+    "MYJDOWNLOADER_EMAIL": "",
+    "MYJDOWNLOADER_PASSWORD": "",
+    "MYJDOWNLOADER_DEVICE_NAME": "HomeAssistant",
+    "DARK_MODE": "1"
+  },
+  "schema": {
+    "MYJDOWNLOADER_EMAIL": "str",
+    "MYJDOWNLOADER_PASSWORD": "str",
+    "MYJDOWNLOADER_DEVICE_NAME": "str",
+    "DARK_MODE": "list(0|1)"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "Stirling PDF",
+  "version": "3.2.0",
+  "slug": "stirling_pdf",
+  "description": "Locally hosted web application for various PDF operations (image by Stirling-Tools)",
+  "url": "https://github.com/jonthekiller/ha-addons/tree/main/stirling_pdf",
+  "image": "stirlingtools/stirling-pdf",
+  "arch": [
+    "amd64",
+    "aarch64"
+  ],
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "hassio_api": false,
+  "homeassistant_api": false,
+  "host_network": false,
+  "host_pid": false,
+  "devicetree": false,
+  "full_access": false,
+  "usb": false,
+  "uart": false,
+  "gpio": false,
+  "kernel_modules": false,
+  "webui": "http://[HOST]:[PORT:8080]",
+  "ports": {
+    "8080/tcp": 8080
+  },
+  "ports_description": {
+    "8080/tcp": "HTTP Port"
+  },
+  "map": [
+    {
+      "type": "addon_config",
+      "read_only": false,
+      "path": "/configs"
+    }
+  ],
+  "environment": {
+    "PUID": "0",
+    "PGID": "0"
+  },
+  "options": {},
+  "schema": {}
+}

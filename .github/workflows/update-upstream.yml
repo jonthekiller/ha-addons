@@ -1,0 +1,180 @@
+name: Update upstream add-ons
+
+# Daily bot: for every add-on declared in .github/addons-update.json, resolve
+# the newest upstream version and bump config.json (and vert/Dockerfile
+# digest) when it changes. Committing triggers .github/workflows/validate.yml,
+# and touching vert/** also triggers .github/workflows/docker-publish.yml.
+#
+# Strategies (see .github/addons-update.json):
+#   docker-tags    — newest stable tag of a Docker Hub image (the Supervisor
+#                    pulls <image>:<addon version>, so version == docker tag)
+#   github-release — latest GitHub release of the upstream project
+#   ghcr-digest    — digest of a GHCR "latest" manifest, pinned in the
+#                    add-on's Dockerfile (vert publishes no version tags)
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      addon:
+        description: 'Only update this add-on (empty = all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-upstream
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check upstream versions and bump changed add-ons
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ONLY_ADDON: ${{ inputs.addon }}
+        run: |
+          python3 <<'PYEOF'
+          import datetime, json, os, re, subprocess, sys, urllib.request
+
+          CFG_PATH = ".github/addons-update.json"
+          config = json.load(open(CFG_PATH))
+          only = os.environ.get("ONLY_ADDON", "").strip()
+          gh_token = os.environ["GH_TOKEN"]
+          summary = []
+          failures = []
+
+          def http(url, headers=None, method="GET"):
+              req = urllib.request.Request(url, headers=headers or {}, method=method)
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  # lowercase-normalized headers (the wire case varies)
+                  return r.status, r.read(), {k.lower(): v for k, v in r.headers.items()}
+
+          def semver_key(v):
+              nums = re.findall(r"\d+", v)
+              return tuple(int(n) for n in nums)
+
+          def latest_docker_tag(image, tag_filter):
+              tags, url = [], f"https://hub.docker.com/v2/repositories/{image}/tags?page_size=100"
+              while url:
+                  _, data, _ = http(url)
+                  page = json.loads(data)
+                  tags += [t["name"] for t in page["results"]]
+                  url = page.get("next")
+              stable = [t for t in tags if re.fullmatch(tag_filter, t)]
+              if not stable:
+                  raise RuntimeError(f"no tag matching {tag_filter!r} for {image}")
+              return max(stable, key=semver_key)
+
+          def latest_github_release(repo):
+              headers = {"Accept": "application/vnd.github+json"}
+              if gh_token:  # unauthenticated fallback (60 req/h) is enough
+                  headers["Authorization"] = f"Bearer {gh_token}"
+              _, data, _ = http(
+                  f"https://api.github.com/repos/{repo}/releases/latest",
+                  headers=headers)
+              return json.loads(data)["tag_name"]
+
+          def latest_ghcr_digest(image):
+              _, data, _ = http(f"https://ghcr.io/token?scope=repository:{image}:pull")
+              token = json.loads(data)["token"]
+              _, _, headers = http(
+                  f"https://ghcr.io/v2/{image}/manifests/latest",
+                  headers={"Authorization": f"Bearer {token}",
+                           "Accept": ("application/vnd.oci.image.index.v1+json, "
+                                      "application/vnd.docker.distribution.manifest.list.v2+json")},
+                  method="HEAD")
+              return headers["docker-content-digest"]
+
+          def read_version(addon):
+              return json.load(open(f"{addon}/config.json"))["version"]
+
+          def write_version(addon, version):
+              path = f"{addon}/config.json"
+              cfg = json.load(open(path))  # key order preserved (py3.7+)
+              cfg["version"] = version
+              with open(path, "w") as f:
+                  json.dump(cfg, f, indent=2, ensure_ascii=False)
+                  f.write("\n")
+
+          def git(*args):
+              subprocess.run(["git", *args], check=True)
+
+          for addon, spec in config.items():
+              if addon.startswith("_"):
+                  continue
+              if only and addon != only:
+                  continue
+              strategy = spec["strategy"]
+              try:
+                  if strategy == "docker-tags":
+                      latest = latest_docker_tag(spec["image"], spec["tag_filter"])
+                  elif strategy == "github-release":
+                      latest = latest_github_release(spec["repo"])
+                      if spec.get("strip_prefix") and latest.startswith(spec["strip_prefix"]):
+                          latest = latest[len(spec["strip_prefix"]):]
+                  elif strategy == "ghcr-digest":
+                      current_digest = re.search(
+                          r"ARG VERT_DIGEST=(\S+)",
+                          open(f"{addon}/Dockerfile").read()).group(1)
+                      latest_digest = latest_ghcr_digest(spec["image"])
+                      if latest_digest == current_digest:
+                          summary.append(f"| {addon} | digest | up to date (`{current_digest[:20]}…`) |")
+                          continue
+                      # Pin the new digest, then derive a version from today's
+                      # date; same-day re-bumps get a 4th component (.2, .3, …)
+                      dockerfile = f"{addon}/Dockerfile"
+                      content = open(dockerfile).read().replace(current_digest, latest_digest)
+                      open(dockerfile, "w").write(content)
+                      today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y.%m.%d")
+                      current = read_version(addon)
+                      if current == today or current.startswith(today + "."):
+                          rev = int(current.split(".")[3]) + 1 if "." in current[len(today):] else 2
+                          version = f"{today}.{rev}"
+                      else:
+                          version = today
+                      write_version(addon, version)
+                      git("add", addon)
+                      git("commit", "-m", f"chore({addon}): rebuild against {spec['image']}@{latest_digest[:20]} (version {version})")
+                      summary.append(f"| {addon} | digest | `{current_digest[:20]}…` → `{latest_digest[:20]}…` (version {version}) |")
+                      continue
+                  else:
+                      raise RuntimeError(f"unknown strategy {strategy!r}")
+
+                  current = read_version(addon)
+                  if current == latest:
+                      summary.append(f"| {addon} | {strategy} | up to date ({current}) |")
+                      continue
+
+                  write_version(addon, latest)
+                  git("add", addon)
+                  git("commit", "-m", f"chore({addon}): bump to {latest}")
+                  summary.append(f"| {addon} | {strategy} | {current} → **{latest}** |")
+              except Exception as exc:  # one failing add-on must not block others
+                  failures.append(f"{addon}: {exc}")
+                  summary.append(f"| {addon} | {strategy} | ❌ {exc} |")
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write("## Upstream add-on update\n\n| Add-on | Strategy | Result |\n|---|---|---|\n")
+              f.write("\n".join(summary) + "\n")
+
+          if failures:
+              for line in failures:
+                  print(f"::error::{line}")
+              sys.exit(1)
+          PYEOF
+
+      - name: Push
+        run: git push

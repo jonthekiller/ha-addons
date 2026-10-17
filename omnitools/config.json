@@ -1,0 +1,34 @@
+{
+  "name": "OmniTools",
+  "version": "0.6.0",
+  "slug": "omnitools",
+  "description": "Self-hosted collection of online tools (images, videos, text, ...) (image by iib0011)",
+  "url": "https://github.com/jonthekiller/ha-addons/tree/main/omnitools",
+  "image": "iib0011/omni-tools",
+  "arch": [
+    "amd64",
+    "aarch64"
+  ],
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "hassio_api": false,
+  "homeassistant_api": false,
+  "host_network": false,
+  "host_pid": false,
+  "devicetree": false,
+  "full_access": false,
+  "usb": false,
+  "uart": false,
+  "gpio": false,
+  "kernel_modules": false,
+  "webui": "http://[HOST]:[PORT:8082]",
+  "ports": {
+    "80/tcp": 8082
+  },
+  "ports_description": {
+    "80/tcp": "HTTP Port"
+  },
+  "options": {},
+  "schema": {}
+}

@@ -1,0 +1,26 @@
+{
+  "_comment": "Update sources for upstream-pinned add-ons, consumed by .github/workflows/update-upstream.yml. Keys are add-on directory names. Strategies: docker-tags (newest tag of a Docker Hub image matching tag_filter), github-release (latest GitHub release of a repo), ghcr-digest (pin ghcr.io image digest into vert/Dockerfile ARG). strip_prefix removes a prefix from the resolved tag before writing config.json version (omit to keep the tag verbatim, e.g. jlesage uses v-prefixed docker tags).",
+  "jdownloader": {
+    "strategy": "docker-tags",
+    "image": "jlesage/jdownloader-2",
+    "tag_filter": "^v[0-9]+([.][0-9]+)*$"
+  },
+  "omnitools": {
+    "strategy": "github-release",
+    "repo": "iib0011/omni-tools",
+    "strip_prefix": "v"
+  },
+  "stirling_pdf": {
+    "strategy": "github-release",
+    "repo": "Stirling-Tools/Stirling-PDF",
+    "strip_prefix": "v"
+  },
+  "fast_note_sync_service": {
+    "strategy": "github-release",
+    "repo": "haierkeys/fast-note-sync-service"
+  },
+  "vert": {
+    "strategy": "ghcr-digest",
+    "image": "vert-sh/vert"
+  }
+}

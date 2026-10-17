@@ -1,0 +1,37 @@
+{
+  "name": "Vert",
+  "version": "2026.10.16",
+  "slug": "vert",
+  "description": "Vert — next-generation file converter, fully local (image by vert-sh, packaged by jonthekiller)",
+  "url": "https://github.com/jonthekiller/ha-addons/tree/main/vert",
+  "image": "jonthekiller/vert-addon-{arch}",
+  "arch": [
+    "amd64",
+    "aarch64"
+  ],
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "hassio_api": false,
+  "homeassistant_api": false,
+  "host_network": false,
+  "host_pid": false,
+  "devicetree": false,
+  "full_access": false,
+  "usb": false,
+  "uart": false,
+  "gpio": false,
+  "kernel_modules": false,
+  "webui": "http://[HOST]:[PORT:8083]",
+  "ports": {
+    "80/tcp": 8083
+  },
+  "ports_description": {
+    "80/tcp": "HTTP Port"
+  },
+  "environment": {
+    "PUB_DISABLE_ALL_EXTERNAL_REQUESTS": "1"
+  },
+  "options": {},
+  "schema": {}
+}
