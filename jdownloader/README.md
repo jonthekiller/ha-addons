@@ -23,6 +23,10 @@ These options are passed to the container as environment variables (`legacy: tru
 
 - `3128/tcp`: JDownloader proxy port (exposed on the host).
 
+## Icon
+
+The icon is the official JDownloader logo (GPL, via [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Jdownloader.png)).
+
 ## Versions
 
 The add-on version is the exact Docker tag of the upstream image (e.g. `v26.09.1`); the Supervisor pulls `jlesage/jdownloader-2:<version>`. A GitHub Action in this repository bumps the version automatically when a new stable tag is published — "Update" then appears in the Home Assistant add-on store.
