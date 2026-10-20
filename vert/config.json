@@ -1,6 +1,6 @@
 {
   "name": "Vert",
-  "version": "2026.10.16",
+  "version": "2026.10.20",
   "slug": "vert",
   "description": "Vert — next-generation file converter, fully local (image by vert-sh, packaged by jonthekiller)",
   "url": "https://github.com/jonthekiller/ha-addons/tree/main/vert",
