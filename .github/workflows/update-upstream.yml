@@ -2,8 +2,13 @@ name: Update upstream add-ons
 
 # Daily bot: for every add-on declared in .github/addons-update.json, resolve
 # the newest upstream version and bump config.json (and vert/Dockerfile
-# digest) when it changes. Committing triggers .github/workflows/validate.yml,
-# and touching vert/** also triggers .github/workflows/docker-publish.yml.
+# digest) when it changes.
+#
+# IMPORTANT: pushes made with the default GITHUB_TOKEN do NOT trigger other
+# workflows (GitHub's anti-recursion rule), so the `push` triggers of
+# validate.yml and docker-publish.yml never fire from this bot's commit.
+# The last step therefore dispatches docker-publish.yml explicitly whenever
+# vert/** changed, otherwise no image would ever be pushed to Docker Hub.
 #
 # Strategies (see .github/addons-update.json):
 #   docker-tags    — newest stable tag of a Docker Hub image (the Supervisor
@@ -24,6 +29,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # needed to dispatch docker-publish.yml (see last step)
 
 concurrency:
   group: update-upstream
@@ -42,10 +48,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Check upstream versions and bump changed add-ons
+        id: bump
         env:
           GH_TOKEN: ${{ github.token }}
           ONLY_ADDON: ${{ inputs.addon }}
         run: |
+          before=$(git rev-parse HEAD)
           python3 <<'PYEOF'
           import datetime, json, os, re, subprocess, sys, urllib.request
 
@@ -176,5 +184,38 @@ jobs:
               sys.exit(1)
           PYEOF
 
+          # Record which paths the bot touched, so later steps can act on them
+          # (a GITHUB_TOKEN push does not trigger other workflows).
+          if [ "$(git rev-parse HEAD)" = "$before" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "vert_changed=false" >> "$GITHUB_OUTPUT"
+            echo "No commit was created — nothing changed upstream."
+          else
+            changed=$(git diff --name-only "$before" HEAD)
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            if printf '%s\n' "$changed" | grep -q '^vert/'; then
+              echo "vert_changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "vert_changed=false" >> "$GITHUB_OUTPUT"
+            fi
+            echo "Changed files:"
+            printf '%s\n' "$changed"
+          fi
+
       - name: Push
+        if: steps.bump.outputs.changed == 'true'
         run: git push
+
+      # GitHub does not start new workflow runs for pushes made with the
+      # default GITHUB_TOKEN, so docker-publish.yml has to be dispatched here.
+      - name: Trigger vert image publish
+        if: steps.bump.outputs.vert_changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/docker-publish.yml/dispatches" \
+            -d '{"ref":"main"}'
+          echo "Dispatched docker-publish.yml for vert/**" >> "$GITHUB_STEP_SUMMARY"
