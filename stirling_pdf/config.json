@@ -1,6 +1,6 @@
 {
   "name": "Stirling PDF",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "slug": "stirling_pdf",
   "description": "Locally hosted web application for various PDF operations (image by Stirling-Tools)",
   "url": "https://github.com/jonthekiller/ha-addons/tree/main/stirling_pdf",
