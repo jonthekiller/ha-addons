@@ -11,5 +11,5 @@
 # The base index is multi-arch (amd64/arm64): buildx resolves the matching
 # platform layer for each build.
 
-ARG VERT_DIGEST=sha256:51edb89e7c57197b0281ba8427fb27eea63730a3683b10d422061afab2708a49
+ARG VERT_DIGEST=sha256:df3a22efeccf0e37adc3b4d01ecc1bd4ad2bc00ec44dc4672f74b23ba8f3ede9
 FROM ghcr.io/vert-sh/vert@${VERT_DIGEST}
